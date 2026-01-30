@@ -1,0 +1,253 @@
+"""Git operations and GitHub release management for the release tool."""
+
+import subprocess
+import json
+from pathlib import Path
+from typing import Optional
+
+
+class GitError(Exception):
+    """Git operation error."""
+    pass
+
+
+class GitHubError(Exception):
+    """GitHub operation error."""
+    pass
+
+
+def run_git_command(args: list[str], cwd: Path) -> str:
+    """
+    Run a git command and return output.
+
+    Args:
+        args: Git command arguments
+        cwd: Working directory
+
+    Returns:
+        Command output (stdout)
+
+    Raises:
+        GitError: If command fails
+    """
+    try:
+        result = subprocess.run(
+            ["git"] + args,
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        raise GitError(f"Git command failed: {' '.join(args)}\n{e.stderr}") from e
+
+
+def get_current_branch(project_root: Path) -> str:
+    """Get the current git branch name."""
+    return run_git_command(["rev-parse", "--abbrev-ref", "HEAD"], project_root)
+
+
+def check_on_main_branch(project_root: Path, main_branch: str) -> None:
+    """
+    Check if current branch is the main branch.
+
+    Raises:
+        GitError: If not on main branch
+    """
+    current = get_current_branch(project_root)
+    if current != main_branch:
+        raise GitError(
+            f"Not on {main_branch} branch (currently on {current})\n"
+            f"Please checkout {main_branch} first"
+        )
+
+
+def fetch_remote(project_root: Path) -> None:
+    """Fetch updates from remote repository."""
+    print("🔄 Fetching from remote...")
+    run_git_command(["fetch"], project_root)
+
+
+def is_up_to_date_with_remote(project_root: Path, main_branch: str) -> bool:
+    """
+    Check if local branch is up to date with remote.
+
+    Returns:
+        True if up to date, False otherwise
+    """
+    local = run_git_command(["rev-parse", main_branch], project_root)
+    remote = run_git_command(["rev-parse", f"origin/{main_branch}"], project_root)
+    return local == remote
+
+
+def check_up_to_date(project_root: Path, main_branch: str) -> None:
+    """
+    Check if repository is up to date with remote.
+
+    Raises:
+        GitError: If repository is not up to date
+    """
+    fetch_remote(project_root)
+
+    if not is_up_to_date_with_remote(project_root, main_branch):
+        raise GitError(
+            f"Local branch is not up to date with origin/{main_branch}\n"
+            f"Please pull the latest changes first"
+        )
+
+    print(f"✓ Repository is up to date with origin/{main_branch}")
+
+
+def run_gh_command(args: list[str], cwd: Path) -> str:
+    """
+    Run a GitHub CLI command and return output.
+
+    Args:
+        args: gh command arguments
+        cwd: Working directory
+
+    Returns:
+        Command output (stdout)
+
+    Raises:
+        GitHubError: If command fails
+    """
+    try:
+        result = subprocess.run(
+            ["gh"] + args,
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        raise GitHubError(
+            f"GitHub CLI command failed: {' '.join(args)}\n{e.stderr}"
+        ) from e
+    except FileNotFoundError:
+        raise GitHubError(
+            "GitHub CLI (gh) not found. Please install it: https://cli.github.com/"
+        )
+
+
+def get_latest_release(project_root: Path) -> Optional[dict]:
+    """
+    Get the latest GitHub release.
+
+    Returns:
+        Dictionary with release info (tagName, name, body) or None if no releases
+    """
+    try:
+        # First, get the list of releases (without body field)
+        output = run_gh_command(
+            ["release", "list", "--limit", "1", "--json", "tagName,name"],
+            project_root
+        )
+        if not output:
+            return None
+
+        releases = json.loads(output)
+        if not releases:
+            return None
+
+        # Get the latest release tag
+        latest_tag = releases[0]["tagName"]
+
+        # Now get full details including body
+        details = run_gh_command(
+            ["release", "view", latest_tag, "--json", "tagName,name,body"],
+            project_root
+        )
+
+        return json.loads(details)
+    except (GitHubError, json.JSONDecodeError, KeyError, IndexError):
+        return None
+
+
+def get_commit_of_tag(project_root: Path, tag: str) -> str:
+    """Get the commit hash that a tag points to."""
+    return run_git_command(["rev-list", "-n", "1", tag], project_root)
+
+
+def get_latest_commit(project_root: Path) -> str:
+    """Get the latest commit hash."""
+    return run_git_command(["rev-parse", "HEAD"], project_root)
+
+
+def is_latest_commit_released(project_root: Path) -> tuple[bool, Optional[dict]]:
+    """
+    Check if the latest commit has a GitHub release.
+
+    Returns:
+        Tuple of (is_released, release_info)
+    """
+    latest_release = get_latest_release(project_root)
+    if not latest_release:
+        return False, None
+
+    release_tag = latest_release["tagName"]
+    tag_commit = get_commit_of_tag(project_root, release_tag)
+    latest_commit = get_latest_commit(project_root)
+
+    if tag_commit == latest_commit:
+        return True, latest_release
+
+    return False, latest_release
+
+
+def create_github_release(
+    project_root: Path,
+    tag_name: str,
+    title: str,
+    notes: str
+) -> None:
+    """
+    Create a GitHub release.
+
+    Args:
+        project_root: Path to project root
+        tag_name: Name of the tag for the release
+        title: Release title
+        notes: Release notes/description
+    """
+    print(f"\n🚀 Creating GitHub release '{tag_name}'...")
+
+    run_gh_command(
+        ["release", "create", tag_name, "--title", title, "--notes", notes],
+        project_root
+    )
+
+    print(f"✓ Release '{tag_name}' created and published")
+
+
+def verify_release_on_latest_commit(project_root: Path, tag_name: str) -> None:
+    """
+    Verify that a release exists for the latest commit.
+
+    Raises:
+        GitHubError: If release doesn't exist or doesn't point to latest commit
+    """
+    latest_release = get_latest_release(project_root)
+
+    if not latest_release:
+        raise GitHubError("No releases found")
+
+    if latest_release["tagName"] != tag_name:
+        raise GitHubError(
+            f"Latest release tag '{latest_release['tagName']}' "
+            f"doesn't match expected '{tag_name}'"
+        )
+
+    tag_commit = get_commit_of_tag(project_root, tag_name)
+    latest_commit = get_latest_commit(project_root)
+
+    if tag_commit != latest_commit:
+        raise GitHubError(
+            f"Release '{tag_name}' does not point to the latest commit\n"
+            f"Release commit: {tag_commit}\n"
+            f"Latest commit: {latest_commit}"
+        )
+
+    print(f"✓ Release '{tag_name}' points to the latest commit")

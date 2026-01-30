@@ -1,0 +1,1 @@
+"""Release tool for project."""
