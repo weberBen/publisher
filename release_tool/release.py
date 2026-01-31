@@ -190,14 +190,3 @@ def run_release() -> int:
         print(f"\n⚠️  GitHub release created but Zenodo publication failed: {e}", file=sys.stderr)
         print(f"  You can manually upload {renamed_pdf.name} to Zenodo")
         return
-        
-
-    # except (GitError, GitHubError, RuntimeError, FileNotFoundError, ValueError) as e:
-    #     print(f"\n❌ Error: {e}", file=sys.stderr)
-    #     return 1
-    # except KeyboardInterrupt:
-    #     print("\n\n⚠️  Release cancelled by user")
-    #     return 1
-    # except Exception as e:
-    #     print(f"\n❌ Unexpected error: {e}", file=sys.stderr)
-    #     return 1

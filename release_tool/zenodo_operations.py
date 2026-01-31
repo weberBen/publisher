@@ -10,11 +10,149 @@ class ZenodoError(Exception):
     """Zenodo operation error."""
     pass
 
+def get_latest_record_from_doi(
+    access_token: str,
+    doi: str,
+    zenodo_api_url: str
+    ):
+    
+    """
+    Get the latest version record id from any version doi (including concept doi)
+    """
+    
+    record_id = doi.split("zenodo.")[-1]
+    
+     # Get the latest version deposition ID from concept DOI
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    # Search for the record by concept DOI
+    search_url = f"{zenodo_api_url}/records/{record_id}/versions/latest"
+
+    response = requests.get(search_url, headers=headers)
+
+    if response.status_code != 200:
+        raise ZenodoError(
+            f"Failed to find record with id {record_id}: "
+            f"{response.status_code} {response.text}"
+        )
+
+    if not response.raw:
+        raise ZenodoError(
+            f"Failed to find record with id {record_id} (no data)"
+        )
+    
+    data = response.json()
+    if not data.get("id", None):
+        raise ZenodoError(
+            f"Failed to find record with id {record_id} (no id)"
+        )
+
+    return data
+
+def get_draft_record(
+    access_token: str,
+    record_id: str,
+    zenodo_api_url: str
+    ):
+    
+    """
+    Get the latest version record id from any version doi (including concept doi)
+    """
+    
+     # Get the latest version deposition ID from concept DOI
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    # Search for the record by concept DOI
+    search_url = f"{zenodo_api_url}/records/{record_id}/draft"
+    response = requests.get(search_url, headers=headers)
+
+    if response.status_code != 200:
+        return None
+
+    if not response.raw:
+        return None
+    
+    data = response.json()
+    if not data.get("id", None):
+        return None
+
+    if data.get("status", "") != "draft":
+        return None
+
+    return data
+
+def does_record_exists(
+    access_token: str,
+    record_id: str,
+    zenodo_api_url: str
+) -> str:
+    
+    try:
+        get_latest_record_from_doi(access_token, record_id, zenodo_api_url)
+        return True
+    except:
+        return False
+
+def discard_draft(
+    access_token: str,
+    record_id: str,
+    zenodo_api_url: str
+) -> str:
+    # Get the latest version deposition ID from concept DOI
+    headers = {"Authorization": f"Bearer {access_token}"}
+    
+    # Create new version
+    new_version_url = f"{zenodo_api_url}/deposit/depositions/{record_id}/actions/discard"
+    response = requests.post(new_version_url, headers=headers)
+    # if response.status_code != 201:
+    #     raise ZenodoError(
+    #         f"Failed to discard draft: {response.status_code} {response.text}"
+    #     )
+
+def find_draft_record(access_token, concept_id, zenodo_api_url):
+    if concept_id is None:
+        return None
+    
+    headers = {'Authorization': f'Bearer {access_token}'}
+
+    params = {
+        'q': f'conceptdoi:"{concept_id}"',
+    }
+    
+    r = requests.get(
+        f'{zenodo_api_url}/deposit/depositions',
+        headers=headers,
+        params=params
+    )
+    
+    if r.status_code != 200:
+        return None
+        
+    results = r.json()
+    
+    if not results or len(results)==0:
+        return None
+    
+    record = results[0]
+    record_id = record["id"]
+    
+    if record["state"] != "unsubmitted":
+        return []
+    
+    # check if unsubmitted record is draft
+    draft_record = get_draft_record(access_token, record_id, zenodo_api_url)
+    if not draft_record:
+        return None
+    if draft_record["conceptrecid"] != concept_id:
+        return None
+    
+    return draft_record["id"]
+
 
 def create_new_version(
     access_token: str,
     concept_doi: str,
-    zenodo_api_url: str = "https://zenodo.org/api"
+    zenodo_api_url: str
 ) -> str:
     """
     Create a new version of an existing Zenodo deposit.
@@ -33,23 +171,16 @@ def create_new_version(
     # Get the latest version deposition ID from concept DOI
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    # Search for the record by concept DOI
-    search_url = f"{zenodo_api_url}/records/{concept_doi}"
-
-    response = requests.get(search_url, headers=headers)
-
-    if response.status_code != 200:
-        raise ZenodoError(
-            f"Failed to find record with concept DOI {concept_doi}: "
-            f"{response.status_code} {response.text}"
-        )
-
-    data = response.json()
-    if not data.get("id", None):
-        raise ZenodoError(f"No record found with concept DOI {concept_doi}")
-
-    # Get the record ID directly from the response
-    record_id = data["id"]
+    record_data = get_latest_record_from_doi(access_token, concept_doi, zenodo_api_url)
+    record_id = record_data["id"]
+    concept_id = record_data["conceptrecid"]
+    
+    draft_id = find_draft_record(access_token, concept_id, zenodo_api_url)
+    if draft_id:
+        print(f'\tDetecting draft (id={record_id}) for deposit {concept_id}: deleting...')
+        discard_draft(access_token, draft_id, zenodo_api_url)
+    else:
+        print(f'\tNo draft for deposit {concept_id}')
 
     # Create new version
     new_version_url = f"{zenodo_api_url}/deposit/depositions/{record_id}/actions/newversion"
@@ -62,10 +193,12 @@ def create_new_version(
 
     # Get the new draft deposition ID
     new_version_data = response.json()
-    latest_draft_url = new_version_data["links"]["latest_draft"]
-
-    # Extract deposition ID from the URL
-    deposition_id = latest_draft_url.split("/")[-1]
+    deposition_id = new_version_data["id"]
+    
+    # make sure we get a draft
+    deposition_record = get_draft_record(access_token, deposition_id, zenodo_api_url)
+    if not deposition_record or (deposition_record["conceptrecid"] != concept_id):
+        raise ZenodoError("Trying to edit existing version")
 
     return deposition_id
 
@@ -73,10 +206,13 @@ def create_new_version(
 def delete_existing_files(
     access_token: str,
     deposition_id: str,
-    zenodo_api_url: str = "https://zenodo.org/api"
+    zenodo_api_url: str
 ) -> None:
     """
-    Delete all existing files from a Zenodo deposition.
+    Delete all existing files from a Zenodo draft deposition.
+    Draft (through API not web) is a copy of the previous record
+    Thus all file are also copied and must be deleted before uploading
+    new ones
 
     Args:create_new_version
         access_token: Zenodo access token
@@ -116,7 +252,7 @@ def upload_file(
     access_token: str,
     deposition_id: str,
     file_path: Path,
-    zenodo_api_url: str = "https://zenodo.org/api"
+    zenodo_api_url: str
 ) -> None:
     """
     Upload a file to a Zenodo deposition.
@@ -150,7 +286,7 @@ def update_metadata(
     access_token: str,
     deposition_id: str,
     version: str,
-    zenodo_api_url: str = "https://zenodo.org/api"
+    zenodo_api_url: str
 ) -> None:
     """
     Update the version metadata of a Zenodo deposition.
@@ -201,7 +337,7 @@ def update_metadata(
 def publish_deposition(
     access_token: str,
     deposition_id: str,
-    zenodo_api_url: str = "https://zenodo.org/api"
+    zenodo_api_url: str
 ) -> dict:
     """
     Publish a Zenodo deposition.
@@ -236,7 +372,7 @@ def publish_new_version(
     tag_name: str,
     access_token: str,
     concept_doi: str,
-    zenodo_api_url: str = "https://zenodo.org/api"
+    zenodo_api_url: str
 ) -> str:
     """
     Publish a new version on Zenodo.
