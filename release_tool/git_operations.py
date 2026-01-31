@@ -176,6 +176,74 @@ def get_latest_commit(project_root: Path) -> str:
     return run_git_command(["rev-parse", "HEAD"], project_root)
 
 
+def get_remote_latest_commit(project_root: Path, main_branch: str) -> str:
+    """Get the latest commit hash from the remote main branch."""
+    return run_git_command(["rev-parse", f"origin/{main_branch}"], project_root)
+
+
+def tag_exists(project_root: Path, tag_name: str) -> bool:
+    """
+    Check if a tag exists (locally or remotely).
+
+    Args:
+        project_root: Path to project root
+        tag_name: Name of the tag to check
+
+    Returns:
+        True if tag exists, False otherwise
+    """
+    try:
+        # Check if tag exists locally
+        run_git_command(["rev-parse", tag_name], project_root)
+        return True
+    except GitError:
+        pass
+
+    try:
+        # Check if tag exists on remote using ls-remote
+        output = run_git_command(
+            ["ls-remote", "--tags", "origin", f"refs/tags/{tag_name}"],
+            project_root
+        )
+        return bool(output.strip())
+    except GitError:
+        return False
+
+
+def check_tag_validity(project_root: Path, tag_name: str, main_branch: str) -> None:
+    """
+    Verify that the tag either doesn't exist, or if it exists,
+    points to the latest commit on the remote main branch.
+
+    Args:
+        project_root: Path to project root
+        tag_name: Name of the tag to check
+        main_branch: Name of the main branch
+
+    Raises:
+        GitError: If tag exists but doesn't point to the latest remote commit
+    """
+    if not tag_exists(project_root, tag_name):
+        print(f"✓ Tag '{tag_name}' does not exist yet")
+        return
+
+    # Tag exists, check if it points to the latest remote commit
+    print(f"⚠️  Tag '{tag_name}' already exists, verifying it points to latest commit...")
+    tag_commit = get_commit_of_tag(project_root, tag_name)
+    remote_latest = get_remote_latest_commit(project_root, main_branch)
+
+    if tag_commit == remote_latest:
+        print(f"✓ Tag '{tag_name}' points to the latest remote commit")
+        return
+
+    raise GitError(
+        f"Tag '{tag_name}' already exists but doesn't point to the latest remote commit\n"
+        f"Tag points to: {tag_commit}\n"
+        f"Latest remote commit (origin/{main_branch}): {remote_latest}\n"
+        f"Please use a different tag name or delete the existing tag"
+    )
+
+
 def is_latest_commit_released(project_root: Path) -> tuple[bool, Optional[dict]]:
     """
     Check if the latest commit has a GitHub release.

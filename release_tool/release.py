@@ -7,6 +7,7 @@ from .git_operations import (
     check_on_main_branch,
     check_up_to_date,
     is_latest_commit_released,
+    check_tag_validity,
     create_github_release,
     verify_release_on_latest_commit,
     GitError,
@@ -97,6 +98,10 @@ def run_release() -> int:
         if not release_notes:
             release_notes = ""
             print("No release notes provided")
+
+        # Verify tag validity before creating release
+        print("\n🔍 Verifying tag validity...")
+        check_tag_validity(config.project_root, new_tag, config.main_branch)
 
         # Create GitHub release (automatically creates tag and pushes)
         create_github_release(
