@@ -35,8 +35,7 @@ def archive_pdf(config, tag_name: str, persist: bool = True) -> Path:
     if persist and config.archive_dir:
         new_pdf = config.archive_dir / new_name
     else:
-        with tempfile.NamedTemporaryFile(suffix=".pdf", prefix=f"{config.base_name}-{tag_name}_", delete=False) as f:
-            new_pdf = Path(f.name)
+        new_pdf = Path(tempfile.gettempdir()) / new_name
 
     print(f"\n📝 Copying PDF: {config.pdf_base_name}.pdf → {new_pdf}")
     shutil.copy(main_pdf, new_pdf)

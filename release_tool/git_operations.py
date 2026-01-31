@@ -365,8 +365,7 @@ def archive_project(
     if persist and archive_dir:
         output_file = archive_dir / f"{archive_name}.zip"
     else:
-        with tempfile.NamedTemporaryFile(suffix=".zip", prefix=f"{archive_name}_", delete=False) as f:
-            output_file = Path(f.name)
+        output_file = Path(tempfile.gettempdir()) / f"{archive_name}.zip"
 
     run_git_command(
         ["archive", "--format=zip", f"--prefix={archive_name}/", "-o", str(output_file), tag_name],
