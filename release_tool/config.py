@@ -80,6 +80,8 @@ class Config:
             )
         
         # PDF configuration
+        self.archive_dir = self.env_vars.get("ARCHIVE_DIR", "")
+        self.pdf_base_name = self.env_vars.get("PDF_BASE_NAME", "main.pdf").replace(".pdf", "")
         self.base_name = self.env_vars.get("BASE_NAME", "")
         if not self.base_name:
             raise ValueError(

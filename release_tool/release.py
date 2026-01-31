@@ -31,7 +31,7 @@ def prompt_user(prompt: str) -> str:
     return input(f"{prompt}: ").strip()
 
 
-def rename_pdf(latex_dir: Path, base_name: str, tag_name: str) -> Path:
+def archive_pdf(config, tag_name: str) -> Path:
     """
     Rename main.pdf to {base_name}-{tag_name}.pdf.
 
@@ -46,18 +46,22 @@ def rename_pdf(latex_dir: Path, base_name: str, tag_name: str) -> Path:
     Raises:
         FileNotFoundError: If main.pdf doesn't exist
     """
-    main_pdf = latex_dir / "main.pdf"
+    # Convertir en Path
+    latex_dir = Path(config.latex_dir)
+    archive_dir = Path(config.archive_dir)
+    
+    main_pdf = latex_dir / f"{config.pdf_base_name}.pdf"
     if not main_pdf.exists():
         raise FileNotFoundError(
             f"main.pdf not found at {main_pdf}\n"
             f"Make sure LaTeX build completed successfully"
         )
 
-    new_name = f"{base_name}-{tag_name}.pdf"
-    new_pdf = latex_dir / new_name
+    new_name = f"{config.base_name}-{tag_name}.pdf"
+    new_pdf = archive_dir / new_name  # ✅ Maintenant c'est un Path
 
     print(f"\n📝 Renaming PDF: main.pdf → {new_name}")
-    shutil.copy2(main_pdf, new_pdf)
+    shutil.copy(main_pdf, new_pdf)
     print(f"✓ PDF renamed to {new_name}")
 
     return new_pdf
@@ -157,15 +161,15 @@ def run_release() -> int:
         tag_name = new_tag
 
     # Rename PDF
-    renamed_pdf = rename_pdf(config.latex_dir, config.base_name, tag_name)   
-    print(f"\n✅ PDF {renamed_pdf.name} available at {renamed_pdf}")
+    archived_pdf = archive_pdf(config, tag_name)   
+    print(f"\n✅ PDF {archived_pdf.name} available at {archived_pdf}")
     
     
     release_title = prompt_user(
         f"Publish version (enter publish) ? [publish/no]"
     )
     if release_title != "publish":
-        print(f"No publication made")
+        print(f"⚠️ No publication made")
         return
         
     # Publish to Zenodo if configured
@@ -176,7 +180,7 @@ def run_release() -> int:
     try:
         zenodo_doi = publish_new_version(
             config.project_root,
-            renamed_pdf,
+            archived_pdf,
             tag_name,
             config.zenodo_token,
             config.zenodo_concept_doi,
@@ -188,5 +192,5 @@ def run_release() -> int:
         
     except ZenodoError as e:
         print(f"\n⚠️  GitHub release created but Zenodo publication failed: {e}", file=sys.stderr)
-        print(f"  You can manually upload {renamed_pdf.name} to Zenodo")
+        print(f"  You can manually upload {archived_pdf.name} to Zenodo")
         return

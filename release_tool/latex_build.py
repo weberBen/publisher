@@ -24,7 +24,7 @@ def build_latex(latex_dir: Path) -> None:
 
     try:
         result = subprocess.run(
-            ["make"],
+            ["make", "deploy"],
             cwd=latex_dir,
             check=True,
             capture_output=True,
