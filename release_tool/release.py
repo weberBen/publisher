@@ -161,9 +161,7 @@ def run_release() -> int:
         config.publication_date
     )
 
-    try:
-        publisher.check_update_needed(tag_name, archived_files)
-    except ZenodoNoUpdateNeeded as e:
+    if publisher.is_up_to_date(tag_name, archived_files):
         print(f"\n{PROJECT_HOSTNAME} ✅ {e}")
         return
 
