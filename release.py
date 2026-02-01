@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Release tool for PathThinker project.
+Release tool for Zenodo project.
 
 This script automates the release process:
 1. Builds LaTeX document
