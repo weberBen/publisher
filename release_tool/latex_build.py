@@ -20,17 +20,17 @@ def build_latex(latex_dir: Path) -> None:
     if not makefile.exists():
         raise FileNotFoundError(f"Makefile not found at {makefile}")
 
-    print(f"📄 Building LaTeX document in {latex_dir}...")
+    print(f"📄 Building LaTeX document in {latex_dir}...\n\n")
 
     try:
         result = subprocess.run(
             ["make", "deploy"],
             cwd=latex_dir,
             check=True,
-            capture_output=True,
+            # capture_output=True,
             text=True
         )
-        print("✓ LaTeX compilation successful")
+        print("\n\n✅ LaTeX compilation successful")
 
     except subprocess.CalledProcessError as e:
         print(f"✗ LaTeX compilation failed")

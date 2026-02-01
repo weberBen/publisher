@@ -16,6 +16,8 @@ from .git_operations import (
 from .zenodo_operations import publish_new_version, ZenodoError, ZenodoNoUpdateNeeded, check_zenodo_up_to_date
 from .archive_operation import archive
 
+RED_UNDERLINE = "\033[91;4m"
+RESET = "\033[0m"
 
 def prompt_user(prompt: str) -> str:
     """
@@ -48,14 +50,25 @@ def run_release() -> int:
     
     print(f"✓ Project root: {config.project_root}")
     print(f"✓ Main branch: {config.main_branch}")
+    
+    project_name = config.project_root.name
+    PROJECT_HOSTNAME = f"({RED_UNDERLINE}{project_name}{RESET})"
+    
+    release_notes = prompt_user(
+        f"{PROJECT_HOSTNAME} Start process ? [Y/n]"
+    )
+    if release_notes and (release_notes.lower() in ["n", "no"]):
+        print("❌ Exit process. Nothing done")
+        return 
 
     # Build LaTeX
+    print(f"{PROJECT_HOSTNAME} 📋 Starting latex build process...")
     build_latex(config.latex_dir)
 
     # Check git status
-    print("\n🔍 Checking git repository status...")
+    print(f"\n{PROJECT_HOSTNAME} 🔍 Checking git repository status...")
     check_on_main_branch(config.project_root, config.main_branch)
-    print(f"✓ On {config.main_branch} branch")
+    print(f"{PROJECT_HOSTNAME} ✓ On {config.main_branch} branch")
 
     check_up_to_date(config.project_root, config.main_branch)
 
@@ -72,7 +85,7 @@ def run_release() -> int:
     else:
 
         # Display latest release info
-        print("\n📋 Current release status:")
+        print(f"\n{PROJECT_HOSTNAME} 📋 Current release status:")
         if latest_release:
             print(f"  Last release: {latest_release['tagName']}")
             if latest_release.get('name'):
@@ -86,29 +99,29 @@ def run_release() -> int:
             print("  No releases found (this will be the first release)")
 
         # Prompt for new release
-        print("\n📝 Creating new release...")
+        print(f"\n{PROJECT_HOSTNAME} 📝 Creating new release...")
         while True:
-            new_tag = prompt_user("Enter new tag name (e.g., v1.0.0)")
+            new_tag = prompt_user("{PROJECT_HOSTNAME} Enter new tag name (e.g., v1.0.0) ")
             if new_tag:
                 break
             print("Tag name cannot be empty")
 
         release_title = prompt_user(
-            f"Enter release title (press Enter to use '{new_tag}')"
+            f"{PROJECT_HOSTNAME} Enter release title (press Enter to use '{new_tag}')"
         )
         if not release_title:
             release_title = new_tag
             print(f"Using default title: {release_title}")
 
         release_notes = prompt_user(
-            "Enter release notes (press Enter to skip)"
+            f"{PROJECT_HOSTNAME} Enter release notes (press Enter to skip)"
         )
         if not release_notes:
             release_notes = ""
             print("No release notes provided")
 
         # Verify tag validity before creating release
-        print("\n🔍 Verifying tag validity...")
+        print(f"\n{PROJECT_HOSTNAME} 🔍 Verifying tag validity...")
         check_tag_validity(config.project_root, new_tag, config.main_branch)
 
         # Create GitHub release (automatically creates tag and pushes)
@@ -124,20 +137,20 @@ def run_release() -> int:
         check_up_to_date(config.project_root, config.main_branch)
         verify_release_on_latest_commit(config.project_root, new_tag)
         
-        print(f"\n✅ Release {tag_name} completed successfully!")
+        print(f"\n{PROJECT_HOSTNAME} ✅ Release {tag_name} completed successfully!")
         
         tag_name = new_tag
 
     # Rename PDF
     archived_files = archive(config, tag_name)   
-    print(f"\n✅ Archived files:")
+    print(f"\n{PROJECT_HOSTNAME} ✅ Archived files:")
     for file_path, md5 in archived_files:
         print(f"   • {file_path.name}")
         print(f"     MD5: {md5}")
     
      # Publish to Zenodo if configured
     if not config.has_zenodo_config():
-        print("\n\n⚠️  No publisher set")
+        print(f"\n\n{PROJECT_HOSTNAME} ⚠️  No publisher set")
         return
     
     try :
@@ -149,15 +162,15 @@ def run_release() -> int:
             config.zenodo_api_url
         )
     except ZenodoNoUpdateNeeded as e:
-        print(f"\n✅ {e}")
+        print(f"\n{PROJECT_HOSTNAME} ✅ {e}")
         return
     
     
     release_title = prompt_user(
-        f"Publish version (enter publish) ? [publish/no]"
+        f"{PROJECT_HOSTNAME} Publish version (enter publish) ? [publish/no]"
     )
     if release_title != "publish":
-        print(f"⚠️ No publication made")
+        print(f"{PROJECT_HOSTNAME} ⚠️ No publication made")
         return
     
     try:
@@ -172,9 +185,9 @@ def run_release() -> int:
         )
 
         print(f"  Zenodo DOI: {zenodo_doi}")
-        print(f"\n✅ Publication {tag_name} completed successfully!")
+        print(f"\n{PROJECT_HOSTNAME} ✅ Publication {tag_name} completed successfully!")
 
     except ZenodoError as e:
-        print(f"\n⚠️  GitHub release created but Zenodo publication failed: {e}", file=sys.stderr)
+        print(f"\n{PROJECT_HOSTNAME} ⚠️  GitHub release created but Zenodo publication failed: {e}", file=sys.stderr)
         print(f"  You can manually upload files to Zenodo")
         return
