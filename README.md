@@ -141,6 +141,10 @@ Creates a GitHub release using `gh release create`. This automatically creates a
 
 ## Limitations
 
+### Edge cases
+
+Application half vibe coded, not optimized, not really clean, tested multiple times in sandbox, but be sure to test it on your specific usage before using it in production (test it with test git repo, and test sandbox zenodo repo)
+
 ### Test on Sandbox First
 Always test with `ZENODO_API_URL=https://sandbox.zenodo.org/api` before using production. The script doesn't handle all edge cases.
 
@@ -159,6 +163,7 @@ You must manually create the first version on Zenodo before using this script. I
 ### PDF Storage Philosophy
 This tool assumes you **don't store PDFs in git**. PDFs are generated on-the-fly before upload. If your PDFs are already in the repository, consider using Zenodo's native GitHub integration instead.
 
+
 ## Troubleshooting
 
 ### "Project not initialized for Zenodo publisher"
@@ -176,7 +181,3 @@ Your PDF hasn't changed. This usually means:
 
 ### GitHub CLI errors
 Make sure `gh` is installed and authenticated: `gh auth login`
-
-### Edge cases
-
-Application half vibe coded, not optimized, not really clean, tested multiple times in sandbox, but be sure to test it on your specific usage before using it in production (test it with test git repo, and test sandbox zenodo repo)
