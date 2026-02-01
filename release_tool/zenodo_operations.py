@@ -1,6 +1,5 @@
 """Zenodo operations for publishing releases using inveniordm-py."""
 
-from functools import cached_property
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -65,10 +64,10 @@ class ZenodoPublisher:
     def _discard_draft_version(self, record_id):
         self.client.records(record_id).draft.delete()
     
-    def _create_new_draft_version(self):
+    def _create_new_draft_version(self, last_record):
         # API only allow one draft new version per repo, return the same draft
         # at each call before draft is published or discarded
-        return self.last_record.new_version()
+        return last_record.new_version()
 
 
     def is_up_to_date(
@@ -148,7 +147,7 @@ class ZenodoPublisher:
         draft_record.files.create(file_entries)
 
         # Upload content and commit each file
-        for file_path, _ in file_entries:
+        for file_path, _ in archived_files:
             print(f"  Uploading {file_path.name}...")
             with open(file_path, "rb") as f:
                 file_content = f.read()
@@ -202,15 +201,14 @@ class ZenodoPublisher:
         try:
             
             print("  Creating new draft version...")
-            draft_record = self._create_new_draft_version()
+            draft_record = self._create_new_draft_version(last_record)
             if self._is_draft(draft_record.data["id"]):
-                print(f"Detecting draft version {draft_record.data['id']}")
-
+                print(f"  ⚠️  Detecting existing draft version {draft_record.data['id']}, discarding...")
                 self._discard_draft_version(draft_record.data["id"])
-                draft_record = self._create_new_draft_version()
+                draft_record = self._create_new_draft_version(last_record)
             
             # final verif
-            if not self._is_draft(draft_record.data["id"]) or (draft_record.data["id"]==last_record.data[id]):
+            if not self._is_draft(draft_record.data["id"]) or (draft_record.data["id"] == last_record.data["id"]):
                 raise ZenodoError("Cannot create draft new version...")
             
             # Find PDF file for default preview
@@ -221,7 +219,7 @@ class ZenodoPublisher:
             
             # Upload files
             print("  Uploading files...")
-            self._upload_files(archived_files, draft_record, default_preview_file=pdf_filename)
+            self._upload_files(draft_record, archived_files, default_preview_file=pdf_filename)
 
             # Update metadata
             print(f"  Updating metadata (version: {tag_name})...")

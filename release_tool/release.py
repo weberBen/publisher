@@ -13,7 +13,7 @@ from .git_operations import (
     GitError,
     GitHubError,
 )
-from .zenodo_operations import ZenodoPublisher, ZenodoError, ZenodoNoUpdateNeeded
+from .zenodo_operations import ZenodoPublisher, ZenodoError
 from .archive_operation import archive
 
 RED_UNDERLINE = "\033[91;4m"
@@ -161,8 +161,10 @@ def run_release() -> int:
         config.publication_date
     )
 
-    if publisher.is_up_to_date(tag_name, archived_files):
-        print(f"\n{PROJECT_HOSTNAME} ✅ {e}")
+    up_to_date, msg = publisher.is_up_to_date(tag_name, archived_files)
+    if msg:
+        print(f"\n{PROJECT_HOSTNAME} ✅ {msg}")
+    if up_to_date:
         return
 
     release_title = prompt_user(
