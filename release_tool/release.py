@@ -54,11 +54,12 @@ def run_release() -> int:
     project_name = config.project_root.name
     PROJECT_HOSTNAME = f"({RED_UNDERLINE}{project_name}{RESET})"
     
-    release_notes = prompt_user(
-        f"{PROJECT_HOSTNAME} Start process ? [Y/n]"
+    start_process = prompt_user(
+        f"{PROJECT_HOSTNAME} Start process ? [yes/n]"
     )
-    if release_notes and (release_notes.lower() in ["n", "no"]):
-        print("❌ Exit process. Nothing done")
+    print("start_process", start_process)
+    if (not start_process) or (start_process.lower() != "yes"):
+        print("❌ Exit process.\nNothing done.")
         return 
 
     # Build LaTeX
@@ -169,7 +170,7 @@ def run_release() -> int:
     release_title = prompt_user(
         f"{PROJECT_HOSTNAME} Publish version (enter publish) ? [publish/no]"
     )
-    if release_title != "publish":
+    if (not release_title) or (release_title.lower() != "publish"):
         print(f"{PROJECT_HOSTNAME} ⚠️ No publication made")
         return
     
