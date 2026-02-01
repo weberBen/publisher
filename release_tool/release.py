@@ -13,7 +13,7 @@ from .git_operations import (
     GitError,
     GitHubError,
 )
-from .zenodo_operations import publish_new_version, ZenodoError
+from .zenodo_operations import publish_new_version, ZenodoError, ZenodoNoUpdateNeeded, check_zenodo_up_to_date
 from .archive_operation import archive
 
 
@@ -130,6 +130,23 @@ def run_release() -> int:
         print(f"   • {file_path.name}")
         print(f"     MD5: {md5}")
     
+     # Publish to Zenodo if configured
+    if not config.has_zenodo_config():
+        print("\n\n⚠️  No publisher set")
+        return
+    
+    try :
+        # Check if update is needed
+        record_id, concept_id = check_zenodo_up_to_date(
+            config.zenodo_token,
+            config.zenodo_concept_doi,
+            tag_name, archived_files,
+            config.zenodo_api_url
+        )
+    except ZenodoNoUpdateNeeded as e:
+        print(f"\n✅ {e}")
+        return
+    
     
     release_title = prompt_user(
         f"Publish version (enter publish) ? [publish/no]"
@@ -137,17 +154,14 @@ def run_release() -> int:
     if release_title != "publish":
         print(f"⚠️ No publication made")
         return
-        
-    # Publish to Zenodo if configured
-    if not config.has_zenodo_config():
-        print("\n\n⚠️  No publisher set")
-        return
     
     try:
         zenodo_doi = publish_new_version(
             archived_files,
             tag_name,
             config.zenodo_token,
+            record_id,
+            concept_id,
             config.zenodo_concept_doi,
             config.zenodo_api_url
         )

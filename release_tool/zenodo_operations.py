@@ -10,6 +10,11 @@ class ZenodoError(Exception):
     """Zenodo operation error."""
     pass
 
+
+class ZenodoNoUpdateNeeded(Exception):
+    """No update needed - version already exists."""
+    pass
+
 def get_latest_record_from_doi(
     access_token: str,
     doi: str,
@@ -148,10 +153,69 @@ def find_draft_record(access_token, concept_id, zenodo_api_url):
     
     return draft_record["id"]
 
+def check_zenodo_up_to_date(
+    access_token: str,
+    concept_doi: str,
+    tag_name: str,
+    archived_files: list[tuple[Path, str]],
+    zenodo_api_url: str
+) -> tuple[str, str]:
+    """
+    Check if an update is needed by comparing version names and file checksums.
+
+    Args:
+        access_token: Zenodo access token
+        concept_doi: Concept DOI of the record
+        tag_name: New version name to publish
+        archived_files: List of tuples (file_path, md5_checksum) to upload
+        zenodo_api_url: Zenodo API base URL
+
+    Returns:
+        Tuple of (record_id, concept_id) if update is needed
+
+    Raises:
+        ZenodoNoUpdateNeeded: If version already exists or files are identical
+    """
+    print("  Checking if update is needed...")
+
+    record_data = get_latest_record_from_doi(access_token, concept_doi, zenodo_api_url)
+    record_id = record_data["id"]
+    concept_id = record_data["conceptrecid"]
+    current_version = record_data.get("metadata", {}).get("version", "")
+
+    # Check version
+    if current_version == tag_name:
+        raise ZenodoNoUpdateNeeded(
+            f"Version '{tag_name}' already exists on Zenodo"
+        )
+
+    # Compare MD5 checksums
+    previous_version_files = record_data.get("files", [])
+    previous_version_md5s = {
+        f["checksum"].replace("md5:", "")
+        for f in previous_version_files
+        if f.get("checksum", "")
+    }
+    new_md5s = {md5 for _, md5 in archived_files}
+
+    if previous_version_md5s == new_md5s: # compare set content, not refs
+        raise ZenodoNoUpdateNeeded(
+            f"Files are identical to version '{current_version}' on Zenodo"
+        )
+
+    # Count differences
+    new_files = new_md5s - previous_version_md5s
+    removed_files = previous_version_md5s - new_md5s
+
+    print(f"  ✓ New version '{tag_name}' (current: '{current_version}')")
+    print(f"    {len(new_files)} new/modified file(s), {len(removed_files)} removed file(s)")
+    
+    return record_id, concept_id
 
 def create_new_version(
     access_token: str,
-    concept_doi: str,
+    record_id: str,
+    concept_id: str,
     zenodo_api_url: str
 ) -> str:
     """
@@ -168,12 +232,7 @@ def create_new_version(
     Raises:
         ZenodoError: If creation fails
     """
-    # Get the latest version deposition ID from concept DOI
     headers = {"Authorization": f"Bearer {access_token}"}
-
-    record_data = get_latest_record_from_doi(access_token, concept_doi, zenodo_api_url)
-    record_id = record_data["id"]
-    concept_id = record_data["conceptrecid"]
     
     draft_id = find_draft_record(access_token, concept_id, zenodo_api_url)
     if draft_id:
@@ -370,6 +429,8 @@ def publish_new_version(
     archived_files: list[tuple[Path, str]],
     tag_name: str,
     access_token: str,
+    record_id: str,
+    concept_id: str,
     concept_doi: str,
     zenodo_api_url: str
 ) -> str:
@@ -395,7 +456,7 @@ def publish_new_version(
 
     # Create new version
     print("  Creating new version...")
-    deposition_id = create_new_version(access_token, concept_doi, zenodo_api_url)
+    deposition_id = create_new_version(access_token, record_id, concept_id, zenodo_api_url)
     print(f"  ✓ New version created (ID: {deposition_id})")
 
     # Delete existing files from the draft
