@@ -13,7 +13,7 @@ from .git_operations import (
     GitError,
     GitHubError,
 )
-from .zenodo_operations import publish_new_version, ZenodoError, ZenodoNoUpdateNeeded, check_zenodo_up_to_date
+from .zenodo_operations import ZenodoPublisher, ZenodoError
 from .archive_operation import archive
 
 RED_UNDERLINE = "\033[91;4m"
@@ -31,14 +31,43 @@ def prompt_user(prompt: str) -> str:
     """
     return input(f"{prompt}: ").strip()
 
+def run_release(
+    safeguard_validation_level: bool,
+    force_zenodo_update : bool
+    ) -> int:
+    try:
+        _run_release(
+            safeguard_validation_level,
+            force_zenodo_update
+        )
+    except Exception as e:
+        print(f"\n❌❌❌ {RED_UNDERLINE}Error during process execution:{RESET} ❌❌❌\n{e}\n")
+    except KeyboardInterrupt:
+        print("\nExited.")
 
-def run_release() -> int:
+def _run_release(
+    safeguard_validation_level: bool,
+    force_zenodo_update: bool,
+    ) -> int:
     """
     Main release process.
 
     Returns:
         Exit code (0 for success, 1 for error)
     """
+    
+    if safeguard_validation_level == "light":
+        prompt_validation = "y/n"
+        def validated_response(response, project_name):
+            if not response or (response.lower() in ["Y", "y"]):
+                return True
+            return False
+    else:
+        prompt_validation = "Enter project name"
+        def validated_response(response, project_name):
+            if response and response.lower() == project_name:
+                return True
+            return False
 
     # Load configuration
     print("⚙️  Loading configuration...")
@@ -54,13 +83,14 @@ def run_release() -> int:
     project_name = config.project_root.name
     PROJECT_HOSTNAME = f"({RED_UNDERLINE}{project_name}{RESET})"
     
-    start_process = prompt_user(
-        f"{PROJECT_HOSTNAME} Start process ? [enter project name]"
+    
+    response = prompt_user(
+        f"{PROJECT_HOSTNAME} Start process ? [{prompt_validation}]"
     )
-    print("start_process", start_process)
-    if (not start_process) or (start_process.lower() != project_name):
-        print("❌ Exit process.\nNothing done.")
-        return 
+    if not validated_response(response, project_name=project_name):
+        print(f"{PROJECT_HOSTNAME}  ❌ Exit process.\nNothing done.")
+        return
+
 
     # Build LaTeX
     print(f"{PROJECT_HOSTNAME} 📋 Starting latex build process...")
@@ -102,7 +132,7 @@ def run_release() -> int:
         # Prompt for new release
         print(f"\n{PROJECT_HOSTNAME} 📝 Creating new release...")
         while True:
-            new_tag = prompt_user("{PROJECT_HOSTNAME} Enter new tag name (e.g., v1.0.0) ")
+            new_tag = prompt_user("{PROJECT_HOSTNAME} Enter new tag name")
             if new_tag:
                 break
             print("Tag name cannot be empty")
@@ -149,42 +179,39 @@ def run_release() -> int:
         print(f"   • {file_path.name}")
         print(f"     MD5: {md5}")
     
-     # Publish to Zenodo if configured
+    # Publish to Zenodo if configured
     if not config.has_zenodo_config():
         print(f"\n\n{PROJECT_HOSTNAME} ⚠️  No publisher set")
         return
-    
-    try :
-        # Check if update is needed
-        record_id, concept_id = check_zenodo_up_to_date(
-            config.zenodo_token,
-            config.zenodo_concept_doi,
-            tag_name, archived_files,
-            config.zenodo_api_url
-        )
-    except ZenodoNoUpdateNeeded as e:
-        print(f"\n{PROJECT_HOSTNAME} ✅ {e}")
-        return
-    
-    
-    release_title = prompt_user(
-        f"{PROJECT_HOSTNAME} Publish version (enter publish) ? [enter project name]"
-    )
-    if (not release_title) or (release_title.lower() != project_name):
-        print(f"{PROJECT_HOSTNAME} ⚠️ No publication made")
-        return
-    
-    try:
-        zenodo_doi = publish_new_version(
-            archived_files,
-            tag_name,
-            config.zenodo_token,
-            record_id,
-            concept_id,
-            config.zenodo_concept_doi,
-            config.zenodo_api_url
-        )
 
+    publisher = ZenodoPublisher(
+        config.zenodo_token,
+        config.zenodo_api_url,
+        config.zenodo_concept_doi,
+        config.publication_date
+    )
+
+    up_to_date, msg = publisher.is_up_to_date(tag_name, archived_files)
+    if msg:
+        print(f"\n{PROJECT_HOSTNAME} ✅ {msg}")
+    if not up_to_date:
+        pass
+    elif up_to_date and not force_zenodo_update:
+        return
+    else:
+        print(f"\n\n{PROJECT_HOSTNAME} ⚠️ Forcing zenodo update")
+        pass
+    
+    
+    response = prompt_user(
+        f"{PROJECT_HOSTNAME} Publish version ? [{prompt_validation}]"
+    )
+    if not validated_response(response, project_name=project_name):
+        print(f"{PROJECT_HOSTNAME} ❌ Exit process.\n⚠️ No publication made")
+        return
+
+    try:
+        zenodo_doi = publisher.publish_new_version(archived_files, tag_name)
         print(f"  Zenodo DOI: {zenodo_doi}")
         print(f"\n{PROJECT_HOSTNAME} ✅ Publication {tag_name} completed successfully!")
 

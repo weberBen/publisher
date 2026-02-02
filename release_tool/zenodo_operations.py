@@ -1,494 +1,285 @@
-"""Zenodo operations for publishing releases."""
+"""Zenodo operations for publishing releases using inveniordm-py."""
 
-import json
-import requests
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Optional
+
+from inveniordm_py import InvenioAPI
+from inveniordm_py.files.metadata import FilesListMetadata, OutgoingStream
+from requests.exceptions import HTTPError
 
 
 class ZenodoError(Exception):
     """Zenodo operation error."""
     pass
 
+def get_zenodo_id_from_doi(doi: str) -> str:
+    """Extract Zenodo record ID from a DOI string."""
+    if not doi:
+        return doi
+    return doi.split("zenodo.")[-1]
 
-class ZenodoNoUpdateNeeded(Exception):
-    """No update needed - version already exists."""
-    pass
+class ZenodoPublisher:
+    """Zenodo publisher using InvenioRDM API."""
 
-def get_latest_record_from_doi(
-    access_token: str,
-    doi: str,
-    zenodo_api_url: str
+    def __init__(
+        self,
+        access_token: str,
+        zenodo_api_url: str,
+        concept_doi: str,
+        publication_date: str | None = None
     ):
-    
-    """
-    Get the latest version record id from any version doi (including concept doi)
-    """
-    
-    record_id = doi.split("zenodo.")[-1]
-    
-     # Get the latest version deposition ID from concept DOI
-    headers = {"Authorization": f"Bearer {access_token}"}
+        """
+        Initialize the Zenodo publisher.
 
-    # Search for the record by concept DOI
-    search_url = f"{zenodo_api_url}/records/{record_id}/versions/latest"
-
-    response = requests.get(search_url, headers=headers)
-
-    if response.status_code != 200:
-        raise ZenodoError(
-            f"Failed to find record with id {record_id}: "
-            f"{response.status_code} {response.text}"
+        Args:
+            access_token: Zenodo access token
+            zenodo_api_url: Zenodo API base URL
+            concept_doi: Concept DOI of the record
+            publication_date: Optional publication date (YYYY-MM-DD), defaults to today UTC
+        """
+        self.client = InvenioAPI(zenodo_api_url, access_token)
+        self.concept_doi = concept_doi
+        self.concept_id = get_zenodo_id_from_doi(concept_doi)
+        self._publication_date = publication_date
+    
+    
+    def get_publication_date(self):
+        return self._publication_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    def _get_last_record(self):
+        try:
+            concept_record = self.client.records(self.concept_id).versions.latest()
+            return self.client.records(concept_record.data["id"]).get()
+        except Exception as e:
+            raise ZenodoError(f"Failed to find record with id {self.concept_id}: {e}")
+    
+    def _is_draft(self, record_id: str) -> bool:
+        try:
+            self.client.records(record_id).draft.get()
+            return True
+        except HTTPError as e:
+            if e.response.status_code == 404:
+                return False
+            raise
+    
+    def _get_exsiting_draft_id(self):
+        """
+            Check if a draft already existed (not just created).
+        """
+        response = self.client.session.get(
+            f"{self.client._base_url}/user/records",
+            params={
+                "q": 'conceptrecid:"432538"' 
+            }
         )
-
-    if not response.raw:
-        raise ZenodoError(
-            f"Failed to find record with id {record_id} (no data)"
-        )
-    
-    data = response.json()
-    if not data.get("id", None):
-        raise ZenodoError(
-            f"Failed to find record with id {record_id} (no id)"
-        )
-
-    return data
-
-def get_draft_record(
-    access_token: str,
-    record_id: str,
-    zenodo_api_url: str
-    ):
-    
-    """
-    Get the latest version record id from any version doi (including concept doi)
-    """
-    
-     # Get the latest version deposition ID from concept DOI
-    headers = {"Authorization": f"Bearer {access_token}"}
-
-    # Search for the record by concept DOI
-    search_url = f"{zenodo_api_url}/records/{record_id}/draft"
-    response = requests.get(search_url, headers=headers)
-
-    if response.status_code != 200:
-        return None
-
-    if not response.raw:
-        return None
-    
-    data = response.json()
-    if not data.get("id", None):
-        return None
-
-    if data.get("status", "") != "draft":
-        return None
-
-    return data
-
-def does_record_exists(
-    access_token: str,
-    record_id: str,
-    zenodo_api_url: str
-) -> str:
-    
-    try:
-        get_latest_record_from_doi(access_token, record_id, zenodo_api_url)
-        return True
-    except:
-        return False
-
-def discard_draft(
-    access_token: str,
-    record_id: str,
-    zenodo_api_url: str
-) -> str:
-    # Get the latest version deposition ID from concept DOI
-    headers = {"Authorization": f"Bearer {access_token}"}
-    
-    # Create new version
-    new_version_url = f"{zenodo_api_url}/deposit/depositions/{record_id}/actions/discard"
-    response = requests.post(new_version_url, headers=headers)
-    # if response.status_code != 201:
-    #     raise ZenodoError(
-    #         f"Failed to discard draft: {response.status_code} {response.text}"
-    #     )
-
-def find_draft_record(access_token, concept_id, zenodo_api_url):
-    if concept_id is None:
-        return None
-    
-    headers = {'Authorization': f'Bearer {access_token}'}
-
-    params = {
-        'q': f'conceptdoi:"{concept_id}"',
-    }
-    
-    r = requests.get(
-        f'{zenodo_api_url}/deposit/depositions',
-        headers=headers,
-        params=params
-    )
-    
-    if r.status_code != 200:
-        return None
+        response.raise_for_status()
+        response_data = response.json()
         
-    results = r.json()
-    
-    if not results or len(results)==0:
+        hits = response_data["hits"]["hits"]
+        if len(hits) == 0:
+            raise ZenodoError(f"Cannot found deposit associated to record {self.concept_id}")
+        
+        record_data = hits[0]
+        
+        if record_data["status"] == "draft":
+            return record_data["id"]
+        
         return None
+
+    def _discard_draft_version(self, record_id):
+        self.client.records(record_id).draft.delete()
     
-    record = results[0]
-    record_id = record["id"]
+    def _create_new_draft_version(self, last_record):
+        # API only allow one draft new version per repo, return the same draft
+        # at each call before draft is published or discarded
+        record = last_record.new_version()
+        new_draft = self.client.records(record.data["id"]).draft.get()
+        return new_draft
+
+    def is_up_to_date(
+        self,
+        tag_name: str,
+        archived_files: list[tuple[Path, str]]
+    ) -> str:
+        last_record = self._get_last_record()
+        return self._is_up_to_date(tag_name, last_record, archived_files)
     
-    if record["state"] != "unsubmitted":
-        return []
-    
-    # check if unsubmitted record is draft
-    draft_record = get_draft_record(access_token, record_id, zenodo_api_url)
-    if not draft_record:
-        return None
-    if draft_record["conceptrecid"] != concept_id:
-        return None
-    
-    return draft_record["id"]
+    def _is_up_to_date(
+        self,
+        tag_name: str,
+        last_record,
+        archived_files: list[tuple[Path, str]]
+    ) -> str:
+        """
+        Check if an update is needed by comparing version names and file checksums.
 
-def check_zenodo_up_to_date(
-    access_token: str,
-    concept_doi: str,
-    tag_name: str,
-    archived_files: list[tuple[Path, str]],
-    zenodo_api_url: str
-) -> tuple[str, str]:
-    """
-    Check if an update is needed by comparing version names and file checksums.
+        Args:
+            tag_name: New version name to publish
+            archived_files: List of tuples (file_path, md5_checksum) to upload
 
-    Args:
-        access_token: Zenodo access token
-        concept_doi: Concept DOI of the record
-        tag_name: New version name to publish
-        archived_files: List of tuples (file_path, md5_checksum) to upload
-        zenodo_api_url: Zenodo API base URL
+        Returns:
+            Record ID of the latest version if update is needed
 
-    Returns:
-        Tuple of (record_id, concept_id) if update is needed
+        Raises:
+            ZenodoNoUpdateNeeded: If version already exists or files are identical
+        """
+        print("  Checking if update is needed...")
+        
+        current_version = last_record.data["metadata"].get("version", None)
 
-    Raises:
-        ZenodoNoUpdateNeeded: If version already exists or files are identical
-    """
-    print("  Checking if update is needed...")
+        # Check version
+        if current_version == tag_name:
+            return (True, f"Version '{tag_name}' already exists on Zenodo")
 
-    record_data = get_latest_record_from_doi(access_token, concept_doi, zenodo_api_url)
-    record_id = record_data["id"]
-    concept_id = record_data["conceptrecid"]
-    current_version = record_data.get("metadata", {}).get("version", "")
+        # Compare MD5 checksums - use the proper API to get files
+        files_metadata = last_record.files.get()
+        previous_version_files = files_metadata.data["entries"]
+        previous_version_md5s = {
+            f["checksum"].replace("md5:", "")
+            for f in previous_version_files
+            if f.get("checksum", "")
+        }
+        new_md5s = {md5 for _, md5 in archived_files}
 
-    # Check version
-    if current_version == tag_name:
-        raise ZenodoNoUpdateNeeded(
-            f"Version '{tag_name}' already exists on Zenodo"
-        )
+        if previous_version_md5s == new_md5s:
+            return (True, f"Files are identical to version '{current_version}' on Zenodo")
 
-    # Compare MD5 checksums
-    previous_version_files = record_data.get("files", [])
-    previous_version_md5s = {
-        f["checksum"].replace("md5:", "")
-        for f in previous_version_files
-        if f.get("checksum", "")
-    }
-    new_md5s = {md5 for _, md5 in archived_files}
+        # Count differences
+        new_files = new_md5s - previous_version_md5s
+        removed_files = previous_version_md5s - new_md5s
+        
+        msg = f"  ✓ New version '{tag_name}' (current: '{current_version}')"
+        msg += "\n"
+        msg += f"    {len(new_files)} new/modified file(s), {len(removed_files)} removed file(s)"
+        
+        return (False, msg)
 
-    if previous_version_md5s == new_md5s: # compare set content, not refs
-        raise ZenodoNoUpdateNeeded(
-            f"Files are identical to version '{current_version}' on Zenodo"
-        )
+    def _upload_files(
+        self,
+        draft_record,
+        archived_files: list[tuple[Path, str]],
+        default_preview_file: str | None = None,
+    ) -> None:
+        """
+        Upload files to the cached draft.
 
-    # Count differences
-    new_files = new_md5s - previous_version_md5s
-    removed_files = previous_version_md5s - new_md5s
+        Args:
+            archived_files: List of tuples (file_path, md5_checksum)
+            default_preview_file: Filename to set as default preview (usually PDF)
+        """
 
-    print(f"  ✓ New version '{tag_name}' (current: '{current_version}')")
-    print(f"    {len(new_files)} new/modified file(s), {len(removed_files)} removed file(s)")
-    
-    return record_id, concept_id
+        # Register all files
+        file_entries = [{"key": file_path.name} for file_path, _ in archived_files]
+        draft_record.files.create(FilesListMetadata(file_entries))
 
-def create_new_version(
-    access_token: str,
-    record_id: str,
-    concept_id: str,
-    zenodo_api_url: str
-) -> str:
-    """
-    Create a new version of an existing Zenodo deposit.
+        # Upload content and commit each file
+        for file_path, _ in archived_files:
+            print(f"  Uploading {file_path.name}...")
+            with open(file_path, "rb") as f:
+                file_content = f.read()
 
-    Args:
-        access_token: Zenodo access token
-        concept_doi: Concept DOI of the existing record
-        zenodo_api_url: Zenodo API base URL
+            draft_file = draft_record.files(file_path.name)
+            stream = OutgoingStream()
+            stream._data = file_content
+            draft_file.set_contents(stream)
+            draft_file.commit()
+            print(f"  ✓ {file_path.name} uploaded")
 
-    Returns:
-        Deposition ID for the new version
+        # Set default preview
+        if default_preview_file:
+            draft_record.data["files"]["default_preview"] = default_preview_file
+            draft_record.update()
 
-    Raises:
-        ZenodoError: If creation fails
-    """
-    headers = {"Authorization": f"Bearer {access_token}"}
-    
-    draft_id = find_draft_record(access_token, concept_id, zenodo_api_url)
-    if draft_id:
-        print(f'\tDetecting draft (id={record_id}) for deposit {concept_id}: deleting...')
-        discard_draft(access_token, draft_id, zenodo_api_url)
-    else:
-        print(f'\tNo draft for deposit {concept_id}')
+    def _update_metadata(self, draft_record, publication_date, version: str) -> None:
+        """
+        Update the metadata of the cached draft.
 
-    # Create new version
-    new_version_url = f"{zenodo_api_url}/deposit/depositions/{record_id}/actions/newversion"
-    response = requests.post(new_version_url, headers=headers)
+        Args:
+            version: Version string
+        """
+        draft_record.data["metadata"]["version"] = version
+        draft_record.data["metadata"]["publication_date"] = publication_date
+        draft_record.update()
 
-    if response.status_code != 201:
-        raise ZenodoError(
-            f"Failed to create new version: {response.status_code} {response.text}"
-        )
+    def publish_new_version(
+        self,
+        archived_files: list[tuple[Path, str]],
+        tag_name: str,
+    ) -> str:
+        """
+        Publish a new version on Zenodo.
 
-    # Get the new draft deposition ID
-    new_version_data = response.json()
-    deposition_id = new_version_data["id"]
-    
-    # make sure we get a draft
-    deposition_record = get_draft_record(access_token, deposition_id, zenodo_api_url)
-    if not deposition_record or (deposition_record["conceptrecid"] != concept_id):
-        raise ZenodoError("Trying to edit existing version")
+        Args:
+            archived_files: List of tuples (file_path, md5_checksum) to upload
+            tag_name: Tag name (used as version)
+            record_id: Record ID of the latest version
 
-    return deposition_id
+        Returns:
+            DOI of the published version
 
+        Raises:
+            ZenodoError: If publication fails
+        """
+        print(f"\n📤 Publishing new version to Zenodo...")
+        print(f"  Concept DOI: {self.concept_doi}")
+        print(f"  Version: {tag_name}")
+        
+        publication_date = self.get_publication_date()
+        last_record = self._get_last_record()
+        
+        print(f"  Publication date: {publication_date}")
+        print(f"")
 
-def delete_existing_files(
-    access_token: str,
-    deposition_id: str,
-    zenodo_api_url: str
-) -> None:
-    """
-    Delete all existing files from a Zenodo draft deposition.
-    Draft (through API not web) is a copy of the previous record
-    Thus all file are also copied and must be deleted before uploading
-    new ones
+        try:
+            
+            print("  Creating new draft version...")
+            existing_draft_id = self._get_exsiting_draft_id()
+            if existing_draft_id is not None:
+                print(f"  ⚠️  Detecting existing draft version {existing_draft_id}, discarding...")
+                self._discard_draft_version(existing_draft_id)
+            else:
+                print("  ✓ No existing draft detected")
+            
+            draft_record = self._create_new_draft_version(last_record)
 
-    Args:create_new_version
-        access_token: Zenodo access token
-        deposition_id: Deposition ID
-        zenodo_api_url: Zenodo API base URL
-
-    Raises:
-        ZenodoError: If deletion fails
-    """
-    headers = {"Authorization": f"Bearer {access_token}"}
-
-    # Get existing files
-    files_url = f"{zenodo_api_url}/deposit/depositions/{deposition_id}/files"
-    response = requests.get(files_url, headers=headers)
-
-    if response.status_code != 200:
-        raise ZenodoError(
-            f"Failed to get files: {response.status_code} {response.text}"
-        )
-
-    files = response.json()
-
-    # Delete each file
-    for file in files:
-        file_id = file["id"]
-        delete_url = f"{zenodo_api_url}/deposit/depositions/{deposition_id}/files/{file_id}"
-        response = requests.delete(delete_url, headers=headers)
-
-        if response.status_code != 204:
-            raise ZenodoError(
-                f"Failed to delete file {file['filename']}: "
-                f"{response.status_code} {response.text}"
+            # verification
+            if (
+                (not self._is_draft(draft_record.data["id"]))
+                or 
+                (draft_record.data["id"] == last_record.data["id"])
+            ):
+                raise ZenodoError("Cannot create draft new version...")
+            
+            # Find PDF file for default preview
+            pdf_filename = next(
+                (fp.name for fp, _ in archived_files if fp.suffix.lower() == '.pdf'),
+                None
+            )
+            
+            # Upload files
+            print("  Uploading files...")
+            self._upload_files(
+                draft_record,
+                archived_files,
+                default_preview_file=pdf_filename
             )
 
+            # Update metadata
+            print(f"  Updating metadata (version: {tag_name})...")
+            self._update_metadata(draft_record, publication_date, tag_name)
+            print("  ✓ Metadata updated")
 
-def upload_file(
-    access_token: str,
-    deposition_id: str,
-    file_path: Path,
-    zenodo_api_url: str,
-) -> None:
-    """
-    Upload a file to a Zenodo deposition.
+            # Publish
+            print("  Publishing...")
+            published_record = draft_record.publish()
+            doi = published_record.data["doi"]
+            record_html = published_record.data["links"]["self_html"]
 
-    Args:
-        access_token: Zenodo access token
-        deposition_id: Deposition ID
-        file_path: Path to file to upload
-        zenodo_api_url: Zenodo API base URL
+            print(f"✓ Published to Zenodo!")
+            print(f"  DOI: https://doi.org/{doi}")
+            print(f"  URL: {record_html}")
 
-    Raises:
-        ZenodoError: If upload fails
-    """
-    headers = {"Authorization": f"Bearer {access_token}"}
+            return doi
 
-    upload_url = f"{zenodo_api_url}/deposit/depositions/{deposition_id}/files"
-
-    with open(file_path, "rb") as f:
-        files = {"file": f}
-        data = {"name": file_path.name}
-
-        response = requests.post(upload_url, headers=headers, data=data, files=files)
-
-    if response.status_code != 201:
-        raise ZenodoError(
-            f"Failed to upload file: {response.status_code} {response.text}"
-        )
-
-
-def update_metadata(
-    access_token: str,
-    deposition_id: str,
-    version: str,
-    zenodo_api_url: str
-) -> None:
-    """
-    Update the version metadata of a Zenodo deposition.
-
-    Args:
-        access_token: Zenodo access token
-        deposition_id: Deposition ID
-        version: Version string (e.g., tag name)
-        zenodo_api_url: Zenodo API base URL
-
-    Raises:
-        ZenodoError: If update fails
-    """
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json"
-    }
-
-    # Get current metadata
-    deposition_url = f"{zenodo_api_url}/deposit/depositions/{deposition_id}"
-    response = requests.get(deposition_url, headers=headers)
-
-    if response.status_code != 200:
-        raise ZenodoError(
-            f"Failed to get metadata: {response.status_code} {response.text}"
-        )
-
-    current_data = response.json()
-
-    # Update only the version field
-    metadata = current_data["metadata"]
-    metadata["version"] = version
-
-    # Send update
-    update_data = {"metadata": metadata}
-    response = requests.put(
-        deposition_url,
-        headers=headers,
-        data=json.dumps(update_data)
-    )
-
-    if response.status_code != 200:
-        raise ZenodoError(
-            f"Failed to update metadata: {response.status_code} {response.text}"
-        )
-
-
-def publish_deposition(
-    access_token: str,
-    deposition_id: str,
-    zenodo_api_url: str
-) -> dict:
-    """
-    Publish a Zenodo deposition.
-
-    Args:
-        access_token: Zenodo access token
-        deposition_id: Deposition ID
-        zenodo_api_url: Zenodo API base URL
-
-    Returns:
-        Published record data
-
-    Raises:
-        ZenodoError: If publication fails
-    """
-    headers = {"Authorization": f"Bearer {access_token}"}
-
-    publish_url = f"{zenodo_api_url}/deposit/depositions/{deposition_id}/actions/publish"
-    response = requests.post(publish_url, headers=headers)
-
-    if response.status_code != 202:
-        raise ZenodoError(
-            f"Failed to publish: {response.status_code} {response.text}"
-        )
-
-    return response.json()
-
-
-def publish_new_version(
-    archived_files: list[tuple[Path, str]],
-    tag_name: str,
-    access_token: str,
-    record_id: str,
-    concept_id: str,
-    concept_doi: str,
-    zenodo_api_url: str
-) -> str:
-    """
-    Publish a new version on Zenodo.
-
-    Args:
-        archived_files: List of tuples (file_path, md5_checksum) to upload
-        tag_name: Tag name (used as version)
-        access_token: Zenodo access token
-        concept_doi: Concept DOI of existing record
-        zenodo_api_url: Zenodo API base URL
-
-    Returns:
-        DOI of the published version
-
-    Raises:
-        ZenodoError: If publication fails
-    """
-    print(f"\n📤 Publishing new version to Zenodo...")
-    print(f"  Concept DOI: {concept_doi}")
-    print(f"  Version: {tag_name}")
-
-    # Create new version
-    print("  Creating new version...")
-    deposition_id = create_new_version(access_token, record_id, concept_id, zenodo_api_url)
-    print(f"  ✓ New version created (ID: {deposition_id})")
-
-    # Delete existing files from the draft
-    print("  Removing files from old draft...")
-    delete_existing_files(access_token, deposition_id, zenodo_api_url)
-    print("  ✓ Old files removed")
-
-    # Upload all files (PDF first for default preview on the old API)
-    sorted_files = sorted(
-        archived_files,
-        key=lambda x: x[0].suffix.lower() != '.pdf'  # False (0) pour PDF, True (1) pour autres
-    )
-
-    for file_path, _ in sorted_files:
-        print(f"  Uploading {file_path.name}...")
-        upload_file(access_token, deposition_id, file_path, zenodo_api_url)
-        print(f"  ✓ {file_path.name} uploaded")
-
-
-    # Update metadata with version
-    print(f"  Updating metadata (version: {tag_name})...")
-    update_metadata(access_token, deposition_id, tag_name, zenodo_api_url)
-    print("  ✓ Metadata updated")
-
-    # Publish
-    print("  Publishing...")
-    result = publish_deposition(access_token, deposition_id, zenodo_api_url)
-    doi = result["doi"]
-    record_html = result["links"]["html"]
-
-    print(f"✓ Published to Zenodo!")
-    print(f"  DOI: https://doi.org/{doi}")
-    print(f"  URL: {record_html}")
-
-    return doi
+        except Exception as e:
+            raise ZenodoError(f"Failed to publish new version: {e}")

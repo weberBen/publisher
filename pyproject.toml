@@ -4,11 +4,13 @@ version = "0.1.0"
 description = "Local CLI tool for publishing LaTeX projects to Zenodo from git repo"
 requires-python = ">=3.10"
 dependencies = [
+    "inveniordm-py>=0.1.1",
     "requests>=2.28.0",
 ]
 
 [project.scripts]
 zenodo-publisher = "release_tool.release:run_release"
+zp = "release_tool.release:run_release"
 
 [build-system]
 requires = ["hatchling"]
