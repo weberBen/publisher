@@ -15,6 +15,38 @@ GitHub Actions like [rseng/zenodo-release](https://github.com/rseng/zenodo-relea
 
 This tool is **not recommended** for highly collaborative projects where multiple people need to trigger releases. For that, use GitHub Actions.
 
+# Publication workflow
+
+```mermaid
+graph TD
+    Z[⚙️ Manual git sync] -.->|start tool| A
+    A[📄 Compile LaTeX] -->|PDF generated| B{🔄 Git sync check}
+    B -->|Local ≠ Remote| C[⚠️ Pull/Push required]
+    B -->|Local = Remote| D{🏷️ Release exists?}
+    C --> D
+    D -->|No| E[✨ Create release + tag]
+    D -->|Yes| F[📦 Create archive]
+    E --> F
+    F -->|PDF + optional ZIP| G{📚 Check Zenodo tag}
+    G -->|Tag ≠| H{🔐 MD5 check}
+    G -->|Tag =| I{🔄 Force publish?}
+    H -->|MD5 ≠| J[⬆️ Upload to Zenodo]
+    H -->|MD5 =| I
+    I -->|No| K[✅ Skip - already published]
+    I -->|Yes| J
+    J --> L[🎉 Publish on Zenodo]
+    
+    style Z fill:#f0f0f0,stroke-dasharray: 5 5
+    style A fill:#e1f5ff
+    style E fill:#fff4e1
+    style L fill:#e8f5e9
+    style K fill:#f3e5f5
+    style C fill:#ffe0e0
+    style H fill:#fff9e1
+    style I fill:#ffe4cc
+```
+
+
 ## Prerequisites
 
 - **Python 3.10+**
