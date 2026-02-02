@@ -27,23 +27,36 @@ graph TD
     D -->|No| E[✨ Create release + tag]
     D -->|Yes| F[📦 Create archive]
     E --> F
-    F -->|PDF + optional ZIP| G{📚 Check Zenodo tag}
-    G -->|Tag ≠| H{🔐 MD5 check}
-    G -->|Tag =| I{🔄 Force publish?}
-    H -->|MD5 ≠| J[⬆️ Upload to Zenodo]
-    H -->|MD5 =| I
-    I -->|No| K[✅ Skip - already published]
-    I -->|Yes| J
-    J --> L[🎉 Publish on Zenodo]
+    F -->|PDF + optional ZIP| G{📚 Check Zenodo}
+    G --> H{🔐 Files equal?}
+    H -->|Yes| I{🏷️ Versions equal?}
+    H -->|No| J{🏷️ Versions equal?}
+    I -->|Yes| K[✅ Skip publication <br/> identical]
+    I -->|No| L[✅ Skip publication <br/>⚠️ Warning]
+    J -->|Yes| M[⬆️ Publish <br/>⚠️ Warning]
+    J -->|No| N[⬆️ Publish <br/> All different]
+    K --> O{🔄 Force?}
+    L --> O
+    O -->|Yes| P[⬆️ Upload to Zenodo]
+    O -->|No| Q[✅ Skip publication]
+    M --> P
+    N --> P
+    P --> R[🎉 Publish on Zenodo]
     
     style Z fill:#f0f0f0,stroke-dasharray: 5 5
     style A fill:#e1f5ff
     style E fill:#fff4e1
-    style L fill:#e8f5e9
+    style R fill:#e8f5e9
+    style Q fill:#f3e5f5
     style K fill:#f3e5f5
+    style L fill:#fff3cd
     style C fill:#ffe0e0
     style H fill:#fff9e1
-    style I fill:#ffe4cc
+    style I fill:#fff9e1
+    style J fill:#fff9e1
+    style M fill:#ffd6cc
+    style N fill:#e8f5e9
+    style O fill:#ffe4cc
 ```
 
 
