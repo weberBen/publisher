@@ -23,6 +23,11 @@ if __name__ == "__main__":
         default="strict",
         help='Select the level of safeguard validation for prompt (strict, light)'
     )
+    parser.add_argument(
+        '--force_zenodo_update',
+        action='store_true',
+        help='Force update to zenodo even if up to date'
+    )
     args = parser.parse_args()
     
     # Change to working directory if specified
@@ -30,5 +35,6 @@ if __name__ == "__main__":
         os.chdir(args.work_dir)
     
     run_release(
-        safeguard_validation_level=args.safeguard_validation_level.lower()
+        safeguard_validation_level=args.safeguard_validation_level.lower(),
+        force_zenodo_update=args.force_zenodo_update
     )

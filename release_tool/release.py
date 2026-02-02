@@ -31,9 +31,23 @@ def prompt_user(prompt: str) -> str:
     """
     return input(f"{prompt}: ").strip()
 
+def run_release(
+    safeguard_validation_level: bool,
+    force_zenodo_update : bool
+    ) -> int:
+    try:
+        _run_release(
+            safeguard_validation_level,
+            force_zenodo_update
+        )
+    except Exception as e:
+        print(f"\n❌❌❌ {RED_UNDERLINE}Error during process execution:{RESET} ❌❌❌\n{e}\n")
+    except KeyboardInterrupt:
+        print("\nExited.")
 
 def _run_release(
-    safeguard_validation_level: bool
+    safeguard_validation_level: bool,
+    force_zenodo_update: bool,
     ) -> int:
     """
     Main release process.
@@ -118,7 +132,7 @@ def _run_release(
         # Prompt for new release
         print(f"\n{PROJECT_HOSTNAME} 📝 Creating new release...")
         while True:
-            new_tag = prompt_user("{PROJECT_HOSTNAME} Enter new tag name (e.g., v1.0.0) ")
+            new_tag = prompt_user("{PROJECT_HOSTNAME} Enter new tag name")
             if new_tag:
                 break
             print("Tag name cannot be empty")
@@ -178,12 +192,17 @@ def _run_release(
     )
 
     up_to_date, msg = publisher.is_up_to_date(tag_name, archived_files)
-    up_to_date=False # to remove
     if msg:
         print(f"\n{PROJECT_HOSTNAME} ✅ {msg}")
-    if up_to_date:
+    if not up_to_date:
+        pass
+    elif up_to_date and not force_zenodo_update:
         return
-
+    else:
+        print(f"\n\n{PROJECT_HOSTNAME} ⚠️ Forcing zenodo update")
+        pass
+    
+    
     response = prompt_user(
         f"{PROJECT_HOSTNAME} Publish version ? [{prompt_validation}]"
     )
@@ -200,13 +219,3 @@ def _run_release(
         print(f"\n{PROJECT_HOSTNAME} ⚠️  GitHub release created but Zenodo publication failed: {e}", file=sys.stderr)
         print(f"  You can manually upload files to Zenodo")
         return
-
-def run_release(
-    safeguard_validation_level: bool
-    ) -> int:
-    try:
-        _run_release(safeguard_validation_level)
-    except Exception as e:
-        print(f"\n❌❌❌ {RED_UNDERLINE}Error during process execution:{RESET} ❌❌❌\n{e}\n")
-    except KeyboardInterrupt:
-        print("\nExited.")
