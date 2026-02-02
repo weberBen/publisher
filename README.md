@@ -168,9 +168,7 @@ Always test with `ZENODO_API_URL=https://sandbox.zenodo.org/api` before using pr
 The script **discards existing drafts** on the Zenodo identified deposit by the concept DOI. If you're collaborating on Zenodo through the web interface while using this script, drafts may be lost.
 
 ### API Limitations
-- Uses the legacy Zenodo API
-- Maximum file size: **100 MB** per file
-- Metadata is copied from the previous version; only the version field is updated
+- Metadata is copied from the previous version. Only `version` and `publication_date` are modified.
 - Each version gets a new DOI (no custom DOI per release)
 
 ### First Version Required
@@ -197,3 +195,7 @@ Your PDF hasn't changed. This usually means:
 
 ### GitHub CLI errors
 Make sure `gh` is installed and authenticated: `gh auth login`
+
+## To do
+
+- [ ] Integrate `.zenodo.json` file for richer metadata update
