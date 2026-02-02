@@ -156,7 +156,9 @@ class ZenodoPublisher:
                 file_content = f.read()
 
             draft_file = draft_record.files(file_path.name)
-            draft_file.set_contents(OutgoingStream(file_content))
+            stream = OutgoingStream()
+            stream._data = file_content
+            draft_file.set_contents(stream)
             draft_file.commit()
             print(f"  ✓ {file_path.name} uploaded")
 
