@@ -133,7 +133,7 @@ You have a functionning example of such a project repo [here](https://github.com
 
 See example file [here](./zenodo.env.example).
 
-And create a Zenodo token on `account/settings/applications/tokens/new/` (token created on Zenodo sandbox are dissociated from production) and allow `deposit:actions`and `deposit:write`.
+And create a Zenodo token on `account/settings/applications/tokens/new/` (token created on [Zenodo sandbox](https://sandbox.zenodo.org/) are dissociated from production) and allow `deposit:actions`and `deposit:write`.
 
 ##### Notes
 
@@ -184,7 +184,7 @@ This tool use `git fetch` (not in dry run mode). Thus if it's a problem to fetch
 - If tag exists: verifies it points to the latest commit on the remote branch
 
 ### 4. GitHub Release
-Creates a GitHub release using `gh release create` ([GitHub CLI](https://cli.github.com/). This automatically creates and pushes the tag.
+Creates a GitHub release using `gh release create` ([GitHub CLI](https://cli.github.com/)). This automatically creates and pushes the tag.
 
 ### 5. Archive & Upload
 - Creates file archive (and optionally project ZIP)
@@ -203,7 +203,7 @@ Creates a GitHub release using `gh release create` ([GitHub CLI](https://cli.git
 
 ### Edge cases
 
-Application mostly vibe coded (though verified, especially the Zenodo operations and archive operations), not optimized, not really clean, but working and tested multiple times at each steps on different cases in sandbox, nonetheless be sure to test it on your specific usage before using it in production (test it with test git repo, and test sandbox zenodo repo)
+Application mostly vibe coded (though verified, especially the Zenodo operations and archive operations), not optimized, not really clean, but working and tested multiple times at each steps on different cases in sandbox, nonetheless be sure to test it on your specific usage before using it in production (test it with a test git repo, and a [Zenodo sandbox](https://sandbox.zenodo.org/) deposit)
 
 ### Test on Sandbox First
 Always test with `ZENODO_API_URL=https://sandbox.zenodo.org/api` before using production. The script doesn't handle all edge cases.
