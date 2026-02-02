@@ -125,11 +125,11 @@ class ZenodoPublisher:
         """
         print("  Checking if update is needed...")
         
-        current_version = last_record.data["metadata"].get("version", None)
-
         # Check version
-        if current_version == tag_name:
-            return (True, f"Version '{tag_name}' already exists on Zenodo")
+        current_version = last_record.data["metadata"].get("version", None)
+        versions_equal = (current_version == tag_name)
+        
+        # print(f" \tGit version: '{tag_name}' | Zenodo version: '{current_version}'")
 
         # Compare MD5 checksums - use the proper API to get files
         files_metadata = last_record.files.get()
@@ -140,19 +140,22 @@ class ZenodoPublisher:
             if f.get("checksum", "")
         }
         new_md5s = {md5 for _, md5 in archived_files}
-
-        if previous_version_md5s == new_md5s:
-            return (True, f"Files are identical to version '{current_version}' on Zenodo")
-
-        # Count differences
+        
+        files_equal = (previous_version_md5s == new_md5s)
         new_files = new_md5s - previous_version_md5s
         removed_files = previous_version_md5s - new_md5s
         
-        msg = f"  ✓ New version '{tag_name}' (current: '{current_version}')"
-        msg += "\n"
-        msg += f"    {len(new_files)} new/modified file(s), {len(removed_files)} removed file(s)"
+        versions_msg = f"Git: '{tag_name}' | Zenodo: '{current_version}"
+        files_msg = f"+{len(new_files)} | -{len(removed_files)}"        
         
-        return (False, msg)
+        if files_equal and versions_equal:
+            return (True, f"Files and version are identical to previous version '{current_version}' on Zenodo")
+        if files_equal and not versions_equal:
+            return (True, f"Files are identical to previous version '{current_version}' on Zenodo\n⚠️ But version names are different ({versions_msg})")
+        if not files_equal and versions_equal:
+            return (False, f"Version names are identifial ('{tag_name}'). ⚠️ But files contents are different ({files_msg} files)")
+        
+        return (False, f"Files and version are different.\nVersion {versions_msg}\n{files_msg} files")
 
     def _upload_files(
         self,

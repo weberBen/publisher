@@ -41,7 +41,7 @@ def run_release(
             force_zenodo_update
         )
     except Exception as e:
-        print(f"\n❌❌❌ {RED_UNDERLINE}Error during process execution:{RESET} ❌❌❌\n{e}\n")
+        print(f"\n💀❌💀 {RED_UNDERLINE}Error during process execution:{RESET} 💀❌💀\n{e}\n")
     except KeyboardInterrupt:
         print("\nExited.")
 
@@ -196,6 +196,7 @@ def _run_release(
     if not up_to_date:
         pass
     elif up_to_date and not force_zenodo_update:
+        print("\nNo publication made.")
         return
     else:
         print(f"\n\n{PROJECT_HOSTNAME} ⚠️ Forcing zenodo update")
