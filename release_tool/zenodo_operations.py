@@ -48,7 +48,8 @@ class ZenodoPublisher:
     
     def _get_last_record(self):
         try:
-            return self.client.records(self.concept_id).versions.latest()
+            concept_record = self.client.records(self.concept_id).versions.latest()
+            return self.client.records(concept_record.data["id"]).get()
         except Exception as e:
             raise ZenodoError(f"Failed to find record with id {self.concept_id}: {e}")
     
@@ -98,7 +99,7 @@ class ZenodoPublisher:
             ZenodoNoUpdateNeeded: If version already exists or files are identical
         """
         print("  Checking if update is needed...")
-
+        
         current_version = last_record.data["metadata"].get("version", None)
 
         # Check version
@@ -239,4 +240,5 @@ class ZenodoPublisher:
             return doi
 
         except Exception as e:
+            raise e
             raise ZenodoError(f"Failed to publish new version: {e}")
