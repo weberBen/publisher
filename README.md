@@ -64,25 +64,27 @@ You have a functionning example of such a project repo [here](https://github.com
 
 ### 1. Create `.zenodo.env` in your project root
 
-```bash
-# Required
-MAIN_BRANCH=main
-BASE_NAME=MyProject
-LATEX_DIR=papers/latex
-PDF_BASE_NAME=main
+#### Configuration Options
 
-# Zenodo configuration
-PUBLISHER_TYPE=zenodo
-ZENODO_TOKEN=your_token_here
-ZENODO_CONCEPT_DOI=10.5281/zenodo.XXXXXXX
-ZENODO_API_URL=https://zenodo.org/api
 
-# Archive options (comma-separated: pdf, project)
-ARCHIVE_TYPES=pdf,project
-PERSIST_TYPES=pdf
-ARCHIVE_DIR=./releases
-```
-Create a Zenodo token on `account/settings/applications/tokens/new/` (token created on Zenodo sandbox are dissociated from production) and allow `deposit:actions`and `deposit:write`.
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `MAIN_BRANCH` | No | `main` | Branch to check for releases |
+| `BASE_NAME` | Yes | - | Base name for output files (e.g., `MyProject-v1.0.0.pdf`) |
+| `LATEX_DIR` | Yes | - | Path to LaTeX directory (relative to project root) |
+| `PDF_BASE_NAME` | No | `main` | Name of the main PDF file (without `.pdf`) |
+| `PUBLISHER_TYPE` | Yes | - | Set to `zenodo` to enable publishing |
+| `ZENODO_TOKEN` | Yes | - | Your Zenodo API token |
+| `ZENODO_CONCEPT_DOI` | Yes | - | Concept DOI of your Zenodo deposit |
+| `ZENODO_API_URL` | No | `https://zenodo.org/api` | Use `https://sandbox.zenodo.org/api` for testing |
+| `ARCHIVE_TYPES` | No | `pdf` | What to archive: `pdf`, `project`, or `pdf,project` |
+| `PERSIST_TYPES` | No | `pdf` | What to save to `ARCHIVE_DIR` (rest goes to temp) |
+| `ARCHIVE_DIR` | No | - | Directory to save persistent archives |
+| `PUBLICATION_DATE` | No | Current utc date | Publication paper's date (format iso YYYY-MM-DD) |
+
+See example file [here](./zenodo.env.example).
+
+And create a Zenodo token on `account/settings/applications/tokens/new/` (token created on Zenodo sandbox are dissociated from production) and allow `deposit:actions`and `deposit:write`.
 
 ### 2. Create a Makefile in your LaTeX directory
 
@@ -107,23 +109,6 @@ For MD5 checksum comparison to work correctly, your PDFs must be reproducible. A
 ```
 
 This is highly recommanded, not mandatory, but without theses the only reference point between the git repo and the zenodo repo will be the version tag name. With this option, we can also compare the content of the previous version to make sure files are different. In theory, the version tag is in sync with the git one, but since we can manually edit theses, a backup solution is always appreciated.
-
-## Configuration Options
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `MAIN_BRANCH` | No | `main` | Branch to check for releases |
-| `BASE_NAME` | Yes | - | Base name for output files (e.g., `MyProject-v1.0.0.pdf`) |
-| `LATEX_DIR` | Yes | - | Path to LaTeX directory (relative to project root) |
-| `PDF_BASE_NAME` | No | `main` | Name of the main PDF file (without `.pdf`) |
-| `PUBLISHER_TYPE` | Yes | - | Set to `zenodo` to enable publishing |
-| `ZENODO_TOKEN` | Yes | - | Your Zenodo API token |
-| `ZENODO_CONCEPT_DOI` | Yes | - | Concept DOI of your Zenodo deposit |
-| `ZENODO_API_URL` | No | `https://zenodo.org/api` | Use `https://sandbox.zenodo.org/api` for testing |
-| `ARCHIVE_TYPES` | No | `pdf` | What to archive: `pdf`, `project`, or `pdf,project` |
-| `PERSIST_TYPES` | No | `pdf` | What to save to `ARCHIVE_DIR` (rest goes to temp) |
-| `ARCHIVE_DIR` | No | - | Directory to save persistent archives |
-| `PUBLICATION_DATE` | No | Current utc date | Publication paper's date (format iso YYYY-MM-DD) |
 
 ## How It Works
 
@@ -151,7 +136,7 @@ Creates a GitHub release using `gh release create`. This automatically creates a
 
 ### 6. Archive & Upload
 - Creates PDF archive (and optionally project ZIP)
-- The project ZIP uses `git archive` (\(\approx \) same as GitHub's ZIP), so untracked local files are excluded
+- The project ZIP uses `git archive` ( ≈ same as GitHub's ZIP), so untracked local files are excluded
 - Uploads files to Zenodo
 - PDF is set as the default preview
 
